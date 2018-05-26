@@ -1,0 +1,120 @@
+#![deny(missing_docs)]
+
+//! Simple wrapper around mio's [Poll](https://docs.rs/mio/latest/mio/struct.Poll.html) method.
+//!
+//! ``` rust
+//! extern crate mio;
+//! extern crate mio_poll_wrapper;
+//!
+//! use mio_poll_wrapper::PollWrapper;
+//! use mio::net::TcpListener;
+//! use std::collections::HashMap;
+//!
+//! fn main() {
+//!     let mut handle = PollWrapper::new().unwrap();
+//!
+//!     let listener = TcpListener::bind(&"0.0.0.0:8000".parse().unwrap()).unwrap();
+//!
+//!     let process_token = handle.register(&listener).unwrap();
+//!     let mut clients = HashMap::new();
+//!
+//!     let result: ::std::io::Result<()> = handle.handle(|event, handle| {
+//!         if event.token() == process_token {
+//!             let (stream, addr) = listener.accept()?;
+//!             println!("Accepted socket from {:?}", addr);
+//!             let token = handle.register(&stream)?;
+//!             clients.insert(token, stream);
+//!         } else if let Some(client) = clients.get_mut(&event.token()) {
+//!             println!("Received data from client {:?}", client.peer_addr());
+//!         }
+//!         Ok(())
+//!     });
+//!
+//!     if let Err(e) = result {
+//!         println!("Could not execute: {:?}", e);
+//!     }
+//! }
+//! ```
+
+extern crate mio;
+
+use mio::{Event, Evented, Events, Poll, PollOpt, Ready, Token};
+
+/// A wrapper around mio's Poll method
+///
+/// You can create this
+pub struct PollWrapper {
+    poll: Poll,
+    tokens: Vec<Token>,
+    next_token_id: usize,
+}
+
+impl PollWrapper {
+    /// Create a new poll wrapper
+    pub fn new() -> ::std::io::Result<PollWrapper> {
+        Ok(PollWrapper {
+            poll: Poll::new()?,
+            tokens: Vec::new(),
+            next_token_id: 0,
+        })
+    }
+
+    /// Start the poll routine. Every time an event gets received, the callback handler gets called.
+    ///
+    /// The first argument of the handler is the event that is received.
+    ///
+    /// The second argument is a handle. See [Handle] for more information.
+    pub fn handle<E>(
+        mut self,
+        mut handler: impl FnMut(Event, &mut Handle) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let mut events = Events::with_capacity(10);
+        loop {
+            self.poll.poll(&mut events, None).unwrap();
+            for event in &events {
+                let mut handle = Handle {
+                    poll: &self.poll,
+                    tokens: Vec::new(),
+                    next_token_id: &mut self.next_token_id,
+                };
+                handler(event, &mut handle)?;
+                for token in handle.tokens {
+                    self.tokens.push(token);
+                }
+            }
+        }
+    }
+
+    /// Register an evented with the poll.
+    /// This returns the token that was registered.
+    pub fn register(&mut self, evented: &impl Evented) -> ::std::io::Result<Token> {
+        let token = Token(self.next_token_id);
+        self.next_token_id += 1;
+        self.poll
+            .register(evented, token, Ready::all(), PollOpt::edge())?;
+        self.tokens.push(token);
+        Ok(token)
+    }
+}
+
+/// A handle that gets passed to the callback method of [PollWrapper].
+///
+/// This handle allows you to register evented methods to the poll while the wrapper is running.
+pub struct Handle<'a> {
+    poll: &'a Poll,
+    tokens: Vec<Token>,
+    next_token_id: &'a mut usize,
+}
+
+impl<'a> Handle<'a> {
+    /// Register an evented with the poll.
+    /// This returns the token that was registered.
+    pub fn register(&mut self, evented: &impl Evented) -> ::std::io::Result<Token> {
+        let token = Token(*self.next_token_id);
+        *self.next_token_id += 1;
+        self.poll
+            .register(evented, token, Ready::all(), PollOpt::edge())?;
+        self.tokens.push(token);
+        Ok(token)
+    }
+}

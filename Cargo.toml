@@ -1,0 +1,11 @@
+[package]
+name = "mio-poll-handler"
+version = "0.1.0"
+authors = ["Victor Koenders <victor.koenders@gmail.com>"]
+repository = "https://github.com/trangar/mio-poll-handler"
+description = "Wrapper that slightly simplifies handling tokens and evented in mio"
+license = "MIT"
+readme = "readme.md"
+
+[dependencies]
+mio = "0.6.14"
