@@ -72,7 +72,7 @@ impl PollWrapper {
         loop {
             self.poll.poll(&mut events, None).unwrap();
             for event in &events {
-                let mut handle = Handle {
+                let mut handle = PollHandle {
                     poll: &self.poll,
                     tokens: Vec::new(),
                     next_token_id: &mut self.next_token_id,
@@ -84,10 +84,26 @@ impl PollWrapper {
             }
         }
     }
+}
 
+/// A handle that gets passed to the callback method of [PollWrapper].
+///
+/// This handle allows you to register evented methods to the poll while the wrapper is running.
+pub struct PollHandle<'a> {
+    poll: &'a Poll,
+    tokens: Vec<Token>,
+    next_token_id: &'a mut usize,
+}
+
+/// A generic trait of a handle that can register evented systems with a poll obj
+pub trait Handle {
     /// Register an evented with the poll.
     /// This returns the token that was registered.
-    pub fn register(&mut self, evented: &impl Evented) -> ::std::io::Result<Token> {
+    fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token>;
+}
+
+impl Handle for PollWrapper { 
+    fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token> {
         let token = Token(self.next_token_id);
         self.next_token_id += 1;
         self.poll
@@ -97,19 +113,8 @@ impl PollWrapper {
     }
 }
 
-/// A handle that gets passed to the callback method of [PollWrapper].
-///
-/// This handle allows you to register evented methods to the poll while the wrapper is running.
-pub struct Handle<'a> {
-    poll: &'a Poll,
-    tokens: Vec<Token>,
-    next_token_id: &'a mut usize,
-}
-
-impl<'a> Handle<'a> {
-    /// Register an evented with the poll.
-    /// This returns the token that was registered.
-    pub fn register(&mut self, evented: &impl Evented) -> ::std::io::Result<Token> {
+impl<'a> Handle for PollHandle<'a> {
+    fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token> {
         let token = Token(*self.next_token_id);
         *self.next_token_id += 1;
         self.poll
