@@ -102,7 +102,7 @@ pub trait Handle {
     fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token>;
 }
 
-impl Handle for PollWrapper { 
+impl Handle for PollWrapper {
     fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token> {
         let token = Token(self.next_token_id);
         self.next_token_id += 1;
