@@ -8,4 +8,4 @@ license = "MIT"
 readme = "readme.md"
 
 [dependencies]
-mio = "0.6.14"
+mio = "0.7.0"
