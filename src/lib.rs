@@ -2,43 +2,41 @@
 
 //! Simple wrapper around mio's [Poll](https://docs.rs/mio/latest/mio/struct.Poll.html) method.
 //!
-//! ``` rust
-//! extern crate mio;
-//! extern crate mio_poll_wrapper;
-//!
-//! use mio_poll_wrapper::PollWrapper;
+//! ``` rust,no_run
+//! use mio_poll_wrapper::{PollWrapper, Handle};
 //! use mio::net::TcpListener;
 //! use std::collections::HashMap;
 //!
-//! fn main() {
-//!     let mut handle = PollWrapper::new().unwrap();
+//! let mut handle = PollWrapper::new().unwrap();
 //!
-//!     let listener = TcpListener::bind(&"0.0.0.0:8000".parse().unwrap()).unwrap();
+//! let mut listener = TcpListener::bind("0.0.0.0:8000".parse().unwrap()).unwrap();
 //!
-//!     let process_token = handle.register(&listener).unwrap();
-//!     let mut clients = HashMap::new();
+//! let process_token = handle.register(&mut listener).unwrap();
+//! let mut clients = HashMap::new();
 //!
-//!     let result: ::std::io::Result<()> = handle.handle(|event, handle| {
-//!         if event.token() == process_token {
-//!             let (stream, addr) = listener.accept()?;
-//!             println!("Accepted socket from {:?}", addr);
-//!             let token = handle.register(&stream)?;
-//!             clients.insert(token, stream);
-//!         } else if let Some(client) = clients.get_mut(&event.token()) {
-//!             println!("Received data from client {:?}", client.peer_addr());
-//!         }
-//!         Ok(())
-//!     });
-//!
-//!     if let Err(e) = result {
-//!         println!("Could not execute: {:?}", e);
+//! let result: ::std::io::Result<()> = handle.handle(|event, handle| {
+//!     if event.token() == process_token {
+//!         let (mut stream, addr) = listener.accept()?;
+//!         println!("Accepted socket from {:?}", addr);
+//!         let token = handle.register(&mut stream)?;
+//!         clients.insert(token, stream);
+//!     } else if let Some(client) = clients.get_mut(&event.token()) {
+//!         println!("Received data from client {:?}", client.peer_addr());
 //!     }
+//!     Ok(())
+//! });
+//!
+//! if let Err(e) = result {
+//!     println!("Could not execute: {:?}", e);
 //! }
 //! ```
 
 extern crate mio;
 
-use mio::{Event, Evented, Events, Poll, PollOpt, Ready, Token};
+use mio::{
+    event::{Event, Source},
+    Events, Interest, Poll, Token,
+};
 
 /// A wrapper around mio's Poll method
 ///
@@ -66,7 +64,7 @@ impl PollWrapper {
     /// The second argument is a handle. See [Handle] for more information.
     pub fn handle<E>(
         mut self,
-        mut handler: impl FnMut(Event, &mut Handle) -> Result<(), E>,
+        mut handler: impl FnMut(&Event, &mut dyn Handle) -> Result<(), E>,
     ) -> Result<(), E> {
         let mut events = Events::with_capacity(10);
         loop {
@@ -99,26 +97,28 @@ pub struct PollHandle<'a> {
 pub trait Handle {
     /// Register an evented with the poll.
     /// This returns the token that was registered.
-    fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token>;
+    fn register(&mut self, evented: &mut dyn Source) -> ::std::io::Result<Token>;
 }
 
 impl Handle for PollWrapper {
-    fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token> {
+    fn register(&mut self, evented: &mut dyn Source) -> ::std::io::Result<Token> {
         let token = Token(self.next_token_id);
         self.next_token_id += 1;
         self.poll
-            .register(evented, token, Ready::all(), PollOpt::edge())?;
+            .registry()
+            .register(evented, token, Interest::READABLE | Interest::WRITABLE)?;
         self.tokens.push(token);
         Ok(token)
     }
 }
 
 impl<'a> Handle for PollHandle<'a> {
-    fn register(&mut self, evented: &Evented) -> ::std::io::Result<Token> {
+    fn register(&mut self, evented: &mut dyn Source) -> ::std::io::Result<Token> {
         let token = Token(*self.next_token_id);
         *self.next_token_id += 1;
         self.poll
-            .register(evented, token, Ready::all(), PollOpt::edge())?;
+            .registry()
+            .register(evented, token, Interest::READABLE | Interest::WRITABLE)?;
         self.tokens.push(token);
         Ok(token)
     }

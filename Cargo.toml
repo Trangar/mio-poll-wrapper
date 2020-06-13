@@ -6,6 +6,8 @@ repository = "https://github.com/trangar/mio-poll-wrapper"
 description = "Wrapper that slightly simplifies handling tokens and evented in mio"
 license = "MIT"
 readme = "readme.md"
+edition = "2018"
 
-[dependencies]
-mio = "0.7.0"
+[dependencies.mio]
+version = "0.7.0"
+features = ["os-poll", "tcp"]
