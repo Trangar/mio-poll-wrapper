@@ -9,5 +9,5 @@ readme = "readme.md"
 edition = "2018"
 
 [dependencies.mio]
-version = "0.7.0"
+version = "0.8.0"
 features = ["os-poll", "tcp"]
